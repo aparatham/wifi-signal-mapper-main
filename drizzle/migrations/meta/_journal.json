@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793109116480,
+      "tag": "0000_create_wifi_rssi_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793109824741,
+      "tag": "0001_assign_tkmce_developers",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793110084952,
+      "tag": "0002_use_rls_for_developer_check",
+      "breakpoints": true
+    }
+  ]
+}

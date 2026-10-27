@@ -1,0 +1,3 @@
+- [ ] Replace the route-navigation placeholder with the public building/floor RSSI heatmap map.
+- [ ] Add Cloud-backed measurement points and developer-role-protected editing.
+- [ ] Verify role-gated editing, public map browsing, and the preview build.

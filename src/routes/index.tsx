@@ -26,10 +26,10 @@ import { useGpsLocation } from "@/lib/use-gps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { lovable } from "@/integrations/lovable";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  ALL_CAMPUS_AREAS,
   CAMPUS_BUILDINGS,
   isMeasurementDraftValid,
   OPEN_AREA,
@@ -66,8 +66,9 @@ export const Route = createFileRoute("/")({
 function WifiMapPage() {
   const queryClient = useQueryClient();
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
-  const [activeBuildingId, setActiveBuildingId] = useState("main");
-  const [activeFloor, setActiveFloor] = useState("Ground Floor");
+  const [activeBuildingId, setActiveBuildingId] = useState(OPEN_AREA_ID);
+  const [activeFloor, setActiveFloor] = useState(OPEN_AREA.floors[0] ?? "Ground / Outdoor");
+  const [showHeatmap, setShowHeatmap] = useState(true);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isDeveloper, setIsDeveloper] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
@@ -85,10 +86,7 @@ function WifiMapPage() {
   const survey = useSurveyWalk();
   const gps = useGpsLocation();
 
-  const availableAreas = useMemo(
-    () => (isDeveloper ? ALL_CAMPUS_AREAS : CAMPUS_BUILDINGS),
-    [isDeveloper],
-  );
+  const availableAreas = useMemo(() => [OPEN_AREA, ...CAMPUS_BUILDINGS], []);
 
   const selectedBuilding =
     availableAreas.find((building) => building.id === activeBuildingId) ?? CAMPUS_BUILDINGS[0];
@@ -159,13 +157,6 @@ function WifiMapPage() {
   useEffect(() => {
     if (selectedMeasurement) setRssiValue(String(selectedMeasurement.rssi_dbm));
   }, [selectedMeasurement]);
-
-  useEffect(() => {
-    if (!isDeveloper && activeBuildingId === OPEN_AREA_ID) {
-      setActiveBuildingId("main");
-      setActiveFloor("Ground Floor");
-    }
-  }, [isDeveloper, activeBuildingId]);
 
   function chooseBuilding(buildingId: string) {
     const building = availableAreas.find((item) => item.id === buildingId);
@@ -388,6 +379,16 @@ function WifiMapPage() {
               <MapPinned size={15} />
               {selectedBuilding?.name} <span aria-hidden="true">/</span> {activeFloor}
             </span>
+            <label className="wifi-map-label cursor-pointer select-none" htmlFor="heatmap-toggle">
+              <Layers size={14} />
+              <span>Heat map</span>
+              <Switch
+                id="heatmap-toggle"
+                checked={showHeatmap}
+                onCheckedChange={setShowHeatmap}
+                aria-label="Show or hide the Wi-Fi heat map"
+              />
+            </label>
             {isDeveloper && (
               <span className="wifi-map-label">
                 <Signal size={14} /> Developer editing
@@ -431,6 +432,7 @@ function WifiMapPage() {
           <WifiCampusMap
             activeBuildingId={activeBuildingId}
             measurements={activeMeasurements}
+            showHeatmap={showHeatmap}
             editing={isDeveloper}
             isDeveloper={isDeveloper}
             placingPoint={placingPoint}
@@ -582,7 +584,7 @@ function WifiMapPage() {
 
           <div className="wifi-selector-list">
             <p className="wifi-eyebrow px-1">Buildings &amp; floors</p>
-            {availableAreas.map((building, index) => {
+            {availableAreas.map((building) => {
               const open = activeBuildingId === building.id;
               const isOutdoor = building.id === OPEN_AREA_ID;
               return (
@@ -600,11 +602,14 @@ function WifiMapPage() {
                     <span>
                       {isOutdoor ? (
                         <span className="wifi-building-number font-bold text-accent-foreground bg-accent/40 px-1 py-0.5 rounded text-[9px] uppercase tracking-wider">
-                          Dev only
+                          Outdoor
                         </span>
                       ) : (
                         <span className="wifi-building-number">
-                          B{String(index + 1).padStart(2, "0")}
+                          B
+                          {String(
+                            CAMPUS_BUILDINGS.findIndex((item) => item.id === building.id) + 1,
+                          ).padStart(2, "0")}
                         </span>
                       )}
                       <span className="ml-2 text-sm font-semibold">{building.name}</span>

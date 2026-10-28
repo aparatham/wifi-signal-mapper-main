@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   ChevronDown,
   ChevronUp,
+  Layers,
   LockKeyhole,
   LogIn,
   LogOut,
@@ -103,9 +104,9 @@ function WifiMapPage() {
   const averageRssi =
     activeMeasurements.length > 0
       ? Math.round(
-          activeMeasurements.reduce((sum, measurement) => sum + measurement.rssi_dbm, 0) /
-            activeMeasurements.length,
-        )
+        activeMeasurements.reduce((sum, measurement) => sum + measurement.rssi_dbm, 0) /
+        activeMeasurements.length,
+      )
       : null;
 
   const fetchMeasurements = useCallback(async () => {
@@ -254,9 +255,9 @@ function WifiMapPage() {
     setPointError("");
     const result = selectedMeasurement
       ? await supabase
-          .from("wifi_measurements")
-          .update({ rssi_dbm: rssi })
-          .eq("id", selectedMeasurement.id)
+        .from("wifi_measurements")
+        .update({ rssi_dbm: rssi })
+        .eq("id", selectedMeasurement.id)
       : await supabase.from("wifi_measurements").insert(draft);
     setBusy(false);
     if (result.error) {
@@ -394,17 +395,15 @@ function WifiMapPage() {
             )}
             <button
               type="button"
-              className={`wifi-map-label cursor-pointer transition-colors ${
-                gps.active ? "border-primary bg-primary text-primary-foreground font-semibold" : ""
-              }`}
+              className={`wifi-map-label cursor-pointer transition-colors ${gps.active ? "border-primary bg-primary text-primary-foreground font-semibold" : ""
+                }`}
               onClick={gps.toggle}
               title={
                 gps.active
-                  ? `GPS live tracking active (${
-                      gps.accuracyMeters != null
-                        ? `±${Math.round(gps.accuracyMeters)}m`
-                        : "Acquiring..."
-                    })`
+                  ? `GPS live tracking active (${gps.accuracyMeters != null
+                    ? `±${Math.round(gps.accuracyMeters)}m`
+                    : "Acquiring..."
+                  })`
                   : "Click to track your live GPS position on campus"
               }
             >
@@ -439,10 +438,10 @@ function WifiMapPage() {
             gpsLocation={
               gps.active && gps.mapPoint
                 ? {
-                    mapPoint: gps.mapPoint,
-                    accuracyMeters: gps.accuracyMeters,
-                    isInsideCampus: gps.isInsideCampus,
-                  }
+                  mapPoint: gps.mapPoint,
+                  accuracyMeters: gps.accuracyMeters,
+                  isInsideCampus: gps.isInsideCampus,
+                }
                 : null
             }
             survey={
@@ -589,9 +588,8 @@ function WifiMapPage() {
               return (
                 <section
                   key={building.id}
-                  className={`wifi-building-row ${open ? "active" : ""} ${
-                    isOutdoor ? "border-dashed" : ""
-                  }`}
+                  className={`wifi-building-row ${open ? "active" : ""} ${isOutdoor ? "border-dashed" : ""
+                    }`}
                 >
                   <button
                     type="button"

@@ -7,6 +7,7 @@ import {
   CAMPUS_BUILDINGS,
   CAMPUS_CONTEXT,
   campusLandmarks,
+  OPEN_AREA_ID,
   polygonPoints,
   signalBand,
   type MapPoint,
@@ -28,6 +29,11 @@ type WifiCampusMapProps = {
   onPointDrop: (pointId: string, point: MapPoint) => void;
   survey?: { pos: MapPoint; heading: number; track: MapPoint[] } | null;
   onSurveyTap?: (point: MapPoint) => void;
+  gpsLocation?: {
+    mapPoint: MapPoint;
+    accuracyMeters: number | null;
+    isInsideCampus: boolean;
+  } | null;
 };
 
 const MAP_WIDTH = 1000;
@@ -54,6 +60,7 @@ export function WifiCampusMap({
   onPointDrop,
   survey = null,
   onSurveyTap,
+  gpsLocation = null,
 }: WifiCampusMapProps) {
   const [heatUrl, setHeatUrl] = useState<string | null>(null);
   useEffect(() => setHeatUrl(renderHeatDataUrl(measurements)), [measurements]);
@@ -149,7 +156,12 @@ export function WifiCampusMap({
       </defs>
 
       <rect width={MAP_WIDTH} height={MAP_HEIGHT} fill="url(#campus-dots)" />
-      <polygon className="wifi-map-boundary" points={polygonPoints(CAMPUS_BOUNDARY)} />
+      <polygon
+        className={`wifi-map-boundary ${activeBuildingId === OPEN_AREA_ID ? "selected" : ""}`}
+        points={polygonPoints(CAMPUS_BOUNDARY)}
+        stroke={activeBuildingId === OPEN_AREA_ID ? "var(--map-selected)" : undefined}
+        strokeWidth={activeBuildingId === OPEN_AREA_ID ? "3.5" : undefined}
+      />
       <path
         className="wifi-map-road"
         d="M270 175 C 400 230, 600 230, 710 300 S 700 500, 610 590 S 430 700, 330 740"
@@ -296,11 +308,73 @@ export function WifiCampusMap({
         </g>
       )}
 
+      {gpsLocation?.mapPoint && (
+        <g pointerEvents="none" className="wifi-gps-marker">
+          {gpsLocation.accuracyMeters != null && (
+            <circle
+              cx={gpsLocation.mapPoint.x}
+              cy={gpsLocation.mapPoint.y}
+              r={Math.min(120, Math.max(12, gpsLocation.accuracyMeters * 2))}
+              fill="oklch(0.55 0.18 250 / 0.15)"
+              stroke="oklch(0.55 0.18 250 / 0.5)"
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+            />
+          )}
+          <circle
+            cx={gpsLocation.mapPoint.x}
+            cy={gpsLocation.mapPoint.y}
+            r="16"
+            fill="none"
+            stroke="oklch(0.55 0.18 250)"
+            strokeWidth="2"
+            opacity="0.8"
+          >
+            <animate attributeName="r" values="8;24;8" dur="2.5s" repeatCount="indefinite" />
+            <animate
+              attributeName="opacity"
+              values="0.8;0.1;0.8"
+              dur="2.5s"
+              repeatCount="indefinite"
+            />
+          </circle>
+          <circle
+            cx={gpsLocation.mapPoint.x}
+            cy={gpsLocation.mapPoint.y}
+            r="7"
+            fill="oklch(0.55 0.18 250)"
+            stroke="#ffffff"
+            strokeWidth="2.5"
+          />
+          <text
+            x={gpsLocation.mapPoint.x}
+            y={gpsLocation.mapPoint.y - 14}
+            textAnchor="middle"
+            fill="var(--foreground)"
+            fontSize="11"
+            fontWeight="700"
+          >
+            Live GPS
+            {gpsLocation.accuracyMeters != null
+              ? ` (±${Math.round(gpsLocation.accuracyMeters)}m)`
+              : ""}
+          </text>
+        </g>
+      )}
+
       {!measurements.length && !placingPoint && (
         <foreignObject x="360" y="390" width="280" height="110">
           <div className="wifi-empty-state">
-            <h3>No readings on this floor yet</h3>
-            <p>Measurements will appear here as developers add signal-strength points.</p>
+            <h3>
+              {activeBuildingId === OPEN_AREA_ID
+                ? "No outdoor readings yet"
+                : "No readings on this floor yet"}
+            </h3>
+            <p>
+              {activeBuildingId === OPEN_AREA_ID
+                ? "Developers can log outdoor signal measurements across campus open areas."
+                : "Measurements will appear here as developers add signal-strength points."}
+            </p>
           </div>
         </foreignObject>
       )}

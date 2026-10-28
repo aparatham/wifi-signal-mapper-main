@@ -15,10 +15,17 @@ export type MeasurementDraft = {
 
 export type MapPoint = { x: number; y: number };
 
-const mapPoint = (latitude: number, longitude: number): MapPoint => ({
+export const latLngToMapPoint = (latitude: number, longitude: number): MapPoint => ({
   x: 500 + (longitude - 76.6321) * 220_000,
   y: 50 + (8.9155 - latitude) * 221_000,
 });
+
+export const mapPointToLatLng = (point: MapPoint): { latitude: number; longitude: number } => ({
+  latitude: 8.9155 - (point.y - 50) / 221_000,
+  longitude: (point.x - 500) / 220_000 + 76.6321,
+});
+
+const mapPoint = latLngToMapPoint;
 
 const fromLatLng = (coordinates: [number, number][]): MapPoint[] =>
   coordinates.map(([latitude, longitude]) => mapPoint(latitude, longitude));
@@ -159,19 +166,34 @@ export function signalBand(rssi: number): "strong" | "good" | "fair" | "weak" | 
   return "poor";
 }
 
+export const OPEN_AREA_ID = "open-area";
+
+export const OPEN_AREA: CampusBuilding = {
+  id: OPEN_AREA_ID,
+  name: "Open Area (Outdoor)",
+  floors: ["Ground / Outdoor"],
+  footprint: CAMPUS_BOUNDARY,
+};
+
+export const ALL_CAMPUS_AREAS: CampusBuilding[] = [...CAMPUS_BUILDINGS, OPEN_AREA];
+
+export function isCampusPoint(point: MapPoint): boolean {
+  return point.x >= 0 && point.x <= 1000 && point.y >= 0 && point.y <= 900;
+}
+
 export function isMeasurementDraftValid(draft: MeasurementDraft): boolean {
-  const building = CAMPUS_BUILDINGS.find(({ id }) => id === draft.building_id);
+  const area = ALL_CAMPUS_AREAS.find(({ id }) => id === draft.building_id);
   return Boolean(
-    building &&
-      building.floors.includes(draft.floor_name) &&
-      Number.isFinite(draft.x) &&
-      draft.x >= 0 &&
-      draft.x <= 1000 &&
-      Number.isFinite(draft.y) &&
-      draft.y >= 0 &&
-      draft.y <= 900 &&
-      Number.isInteger(draft.rssi_dbm) &&
-      draft.rssi_dbm >= -120 &&
-      draft.rssi_dbm <= 0,
+    area &&
+    area.floors.includes(draft.floor_name) &&
+    Number.isFinite(draft.x) &&
+    draft.x >= 0 &&
+    draft.x <= 1000 &&
+    Number.isFinite(draft.y) &&
+    draft.y >= 0 &&
+    draft.y <= 900 &&
+    Number.isInteger(draft.rssi_dbm) &&
+    draft.rssi_dbm >= -120 &&
+    draft.rssi_dbm <= 0,
   );
 }

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isMeasurementDraftValid, signalBand } from "@/lib/wifi-map-data";
+import {
+  isMeasurementDraftValid,
+  latLngToMapPoint,
+  mapPointToLatLng,
+  OPEN_AREA_ID,
+  signalBand,
+} from "@/lib/wifi-map-data";
 
 describe("Wi-Fi map measurement rules", () => {
   it("accepts an RSSI reading from -120 through 0 dBm", () => {
@@ -38,5 +44,29 @@ describe("Wi-Fi map measurement rules", () => {
     expect(signalBand(-65)).toBe("fair");
     expect(signalBand(-75)).toBe("weak");
     expect(signalBand(-85)).toBe("poor");
+  });
+
+  it("validates open area (out of building) measurements for Ground / Outdoor floor", () => {
+    const outdoorDraft = {
+      building_id: OPEN_AREA_ID,
+      floor_name: "Ground / Outdoor",
+      x: 450,
+      y: 350,
+      rssi_dbm: -65,
+    };
+    expect(isMeasurementDraftValid(outdoorDraft)).toBe(true);
+    expect(isMeasurementDraftValid({ ...outdoorDraft, floor_name: "1st Floor" })).toBe(false);
+  });
+
+  it("converts GPS lat/lng to map coordinates and back reversibly", () => {
+    const lat = 8.914;
+    const lng = 76.6325;
+    const point = latLngToMapPoint(lat, lng);
+    expect(point.x).toBeGreaterThan(0);
+    expect(point.y).toBeGreaterThan(0);
+
+    const reversed = mapPointToLatLng(point);
+    expect(reversed.latitude).toBeCloseTo(lat, 6);
+    expect(reversed.longitude).toBeCloseTo(lng, 6);
   });
 });

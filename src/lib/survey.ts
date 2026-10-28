@@ -62,21 +62,106 @@ export function simulateScan(p: MapPoint): WifiNetwork[] {
   });
 }
 
+export function frequencyToChannel(freq: number): number {
+  if (freq >= 2412 && freq <= 2484) return Math.round((freq - 2407) / 5);
+  if (freq >= 5170 && freq <= 5825) return Math.round((freq - 5000) / 5);
+  return 0;
+}
+
+export function normalizeNativeScanResults(raw: unknown): WifiNetwork[] {
+  if (!raw) return [];
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  if (typeof parsed === "number" && Number.isFinite(parsed)) {
+    return [{ ssid: "Connected Wi-Fi", bssid: "CURRENT", channel: 0, rssi: Math.round(parsed) }];
+  }
+
+  const items: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? ((parsed as Record<string, unknown>).networks ??
+        (parsed as Record<string, unknown>).results ??
+        (parsed as Record<string, unknown>).scanResults ??
+        [])
+      : [];
+
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((item): WifiNetwork | null => {
+      if (!item || typeof item !== "object") return null;
+      const rec = item as Record<string, unknown>;
+      const ssid = String(rec.SSID ?? rec.ssid ?? rec.networkName ?? "Wi-Fi");
+      const bssid = String(rec.BSSID ?? rec.bssid ?? rec.macAddress ?? "00:00:00:00:00:00");
+      let rssi = Number(rec.level ?? rec.rssi ?? rec.signalLevel ?? rec.signal ?? -70);
+      if (rssi > 0 && rssi <= 100) {
+        // Convert percentage scale to dBm
+        rssi = Math.round((rssi / 100) * 60 - 95);
+      }
+      const rawChannel = Number(rec.channel ?? 0);
+      const frequency = Number(rec.frequency ?? 0);
+      const channel =
+        rawChannel > 0 ? rawChannel : frequency > 0 ? frequencyToChannel(frequency) : 0;
+      return {
+        ssid,
+        bssid,
+        rssi: Math.round(clamp(rssi, -120, 0)),
+        channel,
+      };
+    })
+    .filter((n): n is WifiNetwork => n !== null);
+}
+
 type NativePlugin = {
   scan(): Promise<{ networks?: WifiNetwork[] } | WifiNetwork[]>;
   getConnectedInfo(): Promise<Partial<WifiNetwork>>;
 };
+
+/** Checks if native Android Wi-Fi scanning interface is available (Capacitor, Cordova, or Android WebView). */
+export function isNativeAndroidWifiAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const w = window as unknown as Record<string, unknown>;
+  const C = w.Capacitor as
+    | {
+        isPluginAvailable?: (n: string) => boolean;
+        Plugins?: { WifiScan?: unknown; WifiWizard2?: unknown };
+        getPlatform?: () => string;
+      }
+    | undefined;
+
+  return Boolean(
+    C?.Plugins?.WifiScan ||
+    C?.Plugins?.WifiWizard2 ||
+    C?.isPluginAvailable?.("WifiScan") ||
+    C?.isPluginAvailable?.("WifiWizard2") ||
+    w.WifiWizard2 ||
+    w.AndroidWifi ||
+    w.Android ||
+    w.__NATIVE_WIFI_RESULTS__,
+  );
+}
+
 /** Only exists inside the Android (Capacitor) app that registers the WifiScan plugin. */
 export function nativePlugin(): NativePlugin | null {
+  if (typeof window === "undefined") return null;
   const C = (
-    globalThis as unknown as {
+    window as unknown as {
       Capacitor?: {
         isPluginAvailable?: (n: string) => boolean;
         registerPlugin?: <T>(n: string) => T;
+        Plugins?: { WifiScan?: NativePlugin };
       };
     }
   ).Capacitor;
   try {
+    if (C?.Plugins?.WifiScan) return C.Plugins.WifiScan;
     return C?.isPluginAvailable?.("WifiScan") && C.registerPlugin
       ? C.registerPlugin<NativePlugin>("WifiScan")
       : null;
@@ -85,16 +170,100 @@ export function nativePlugin(): NativePlugin | null {
   }
 }
 
+export async function scanNativeWifi(): Promise<WifiNetwork[]> {
+  if (typeof window === "undefined") {
+    throw new Error("Native Wi-Fi scanning is only available on the client device.");
+  }
+  const w = window as unknown as Record<string, unknown>;
+
+  // 1. Check Capacitor WifiScan plugin
+  const plugin = nativePlugin();
+  if (plugin && typeof plugin.scan === "function") {
+    const r = await plugin.scan();
+    const normalized = normalizeNativeScanResults(r);
+    if (normalized.length > 0) return normalized;
+  }
+
+  // 2. Check Capacitor / Cordova WifiWizard2
+  const C = w.Capacitor as
+    | {
+        Plugins?: {
+          WifiWizard2?: { getScanResults?: () => Promise<unknown>; scan?: () => Promise<unknown> };
+        };
+      }
+    | undefined;
+  const wifiWizard2 =
+    C?.Plugins?.WifiWizard2 ??
+    (w.WifiWizard2 as
+      { getScanResults?: () => Promise<unknown>; scan?: () => Promise<unknown> } | undefined);
+
+  if (wifiWizard2) {
+    if (typeof wifiWizard2.getScanResults === "function") {
+      const res = await wifiWizard2.getScanResults();
+      const normalized = normalizeNativeScanResults(res);
+      if (normalized.length > 0) return normalized;
+    }
+  }
+
+  // 3. Check Android WebView JavaScriptInterface (e.g. window.AndroidWifi or window.Android)
+  const androidWifi = w.AndroidWifi as
+    | {
+        scan?: () => unknown;
+        getWifiScanResults?: () => unknown;
+        getRssi?: () => unknown;
+      }
+    | undefined;
+  if (androidWifi) {
+    const raw =
+      typeof androidWifi.getWifiScanResults === "function"
+        ? androidWifi.getWifiScanResults()
+        : typeof androidWifi.scan === "function"
+          ? androidWifi.scan()
+          : typeof androidWifi.getRssi === "function"
+            ? androidWifi.getRssi()
+            : null;
+    const normalized = normalizeNativeScanResults(raw);
+    if (normalized.length > 0) return normalized;
+  }
+
+  const android = w.Android as
+    | {
+        getWifiScanResults?: () => unknown;
+        scanWifi?: () => unknown;
+        getRssi?: () => unknown;
+      }
+    | undefined;
+  if (android) {
+    const raw =
+      typeof android.getWifiScanResults === "function"
+        ? android.getWifiScanResults()
+        : typeof android.scanWifi === "function"
+          ? android.scanWifi()
+          : typeof android.getRssi === "function"
+            ? android.getRssi()
+            : null;
+    const normalized = normalizeNativeScanResults(raw);
+    if (normalized.length > 0) return normalized;
+  }
+
+  // 4. Check global mock / custom scan results
+  if (w.__NATIVE_WIFI_RESULTS__) {
+    const normalized = normalizeNativeScanResults(w.__NATIVE_WIFI_RESULTS__);
+    if (normalized.length > 0) return normalized;
+  }
+
+  throw new Error(
+    "Native Android Wi-Fi scan: ensure you are running in the Android app with Location Services and permissions enabled.",
+  );
+}
+
 export async function scanNetworks(
   source: RssiSource,
   pos: MapPoint,
   manual: number,
 ): Promise<WifiNetwork[]> {
   if (source === "native") {
-    const plugin = nativePlugin();
-    if (!plugin) throw new Error("Native Wi-Fi scanning only works inside the Android app.");
-    const r = await plugin.scan();
-    return Array.isArray(r) ? r : (r.networks ?? []);
+    return scanNativeWifi();
   }
   if (source === "manual") {
     if (!Number.isFinite(manual) || manual < -100 || manual > -20)

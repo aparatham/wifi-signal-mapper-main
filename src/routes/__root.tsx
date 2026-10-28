@@ -81,13 +81,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "TKM Campus Signal | Wi-Fi Coverage" },
       {
         name: "description",
-        content: "Campus Wi-Fi coverage and signal-strength readings for TKM College of Engineering, Kollam.",
+        content:
+          "Campus Wi-Fi coverage and signal-strength readings for TKM College of Engineering, Kollam.",
       },
       { name: "author", content: "Lovable" },
       { property: "og:title", content: "TKM Campus Signal" },
       {
         property: "og:description",
-        content: "Campus Wi-Fi coverage and signal-strength readings for TKM College of Engineering, Kollam.",
+        content:
+          "Campus Wi-Fi coverage and signal-strength readings for TKM College of Engineering, Kollam.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

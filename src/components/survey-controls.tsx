@@ -1,10 +1,31 @@
-import { Footprints, Play, Radio, RotateCcw, RotateCw, Smartphone, Square } from "lucide-react";
+import {
+  Footprints,
+  Navigation,
+  Play,
+  Radio,
+  RotateCcw,
+  RotateCw,
+  Smartphone,
+  Square,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { centroid, nativePlugin, type RssiSource, type SurveyWalk } from "@/lib/survey";
-import { CAMPUS_BUILDINGS, signalBand, type MapPoint } from "@/lib/wifi-map-data";
+import {
+  centroid,
+  isNativeAndroidWifiAvailable,
+  nativePlugin,
+  type RssiSource,
+  type SurveyWalk,
+} from "@/lib/survey";
+import {
+  ALL_CAMPUS_AREAS,
+  OPEN_AREA,
+  OPEN_AREA_ID,
+  signalBand,
+  type MapPoint,
+} from "@/lib/wifi-map-data";
 
 type Props = {
   survey: SurveyWalk;
@@ -12,10 +33,23 @@ type Props = {
   floor: string;
   busy: boolean;
   onSave: (rssi: number, point: MapPoint) => Promise<boolean>;
+  gpsPoint?: MapPoint | null;
+  gpsAccuracy?: number | null;
 };
 
-export function SurveyControls({ survey: s, buildingId, floor, busy, onSave }: Props) {
-  const building = CAMPUS_BUILDINGS.find((b) => b.id === buildingId);
+export function SurveyControls({
+  survey: s,
+  buildingId,
+  floor,
+  busy,
+  onSave,
+  gpsPoint,
+  gpsAccuracy,
+}: Props) {
+  const building =
+    ALL_CAMPUS_AREAS.find((b) => b.id === buildingId) ??
+    (buildingId === OPEN_AREA_ID ? OPEN_AREA : null);
+  const nativeAvailable = isNativeAndroidWifiAvailable() || Boolean(nativePlugin());
 
   async function measure() {
     const result = await s.measure();
@@ -46,9 +80,7 @@ export function SurveyControls({ survey: s, buildingId, floor, busy, onSave }: P
           >
             <option value="simulated">Simulated</option>
             <option value="manual">Manual dBm</option>
-            <option value="native" disabled={!nativePlugin()}>
-              Native Wi-Fi (Android app)
-            </option>
+            <option value="native">Native Wi-Fi (Android){nativeAvailable ? " ✓" : ""}</option>
           </select>
         </div>
         {s.source === "manual" && (
@@ -72,7 +104,11 @@ export function SurveyControls({ survey: s, buildingId, floor, busy, onSave }: P
         <Button
           className="w-full"
           disabled={busy || !building}
-          onClick={() => building && s.start(centroid(building.footprint))}
+          onClick={() => {
+            if (!building) return;
+            const startPos = gpsPoint ?? centroid(building.footprint);
+            s.start(startPos);
+          }}
         >
           <Play /> Start walk in {building?.name}
         </Button>
@@ -94,6 +130,17 @@ export function SurveyControls({ survey: s, buildingId, floor, busy, onSave }: P
             )}
           </p>
           <div className="flex flex-wrap gap-2">
+            {gpsPoint && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => s.setPos(gpsPoint)}
+                title="Align walk position with current GPS fix"
+              >
+                <Navigation size={13} /> Snap to GPS
+                {gpsAccuracy != null ? ` (±${Math.round(gpsAccuracy)}m)` : ""}
+              </Button>
+            )}
             <Button
               size="sm"
               variant={s.sensors ? "default" : "outline"}

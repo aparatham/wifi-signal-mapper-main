@@ -8,6 +8,7 @@ import {
   LogIn,
   LogOut,
   MapPinned,
+  Navigation,
   Plus,
   RadioTower,
   Save,
@@ -20,14 +21,18 @@ import {
 import { SurveyControls } from "@/components/survey-controls";
 import { WifiCampusMap } from "@/components/wifi-campus-map";
 import { useSurveyWalk } from "@/lib/survey";
+import { useGpsLocation } from "@/lib/use-gps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { lovable } from "@/integrations/lovable";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  ALL_CAMPUS_AREAS,
   CAMPUS_BUILDINGS,
   isMeasurementDraftValid,
+  OPEN_AREA,
+  OPEN_AREA_ID,
   signalBand,
   type MapPoint,
 } from "@/lib/wifi-map-data";
@@ -77,9 +82,15 @@ function WifiMapPage() {
   const [newPoint, setNewPoint] = useState<MapPoint | null>(null);
   const [rssiValue, setRssiValue] = useState("-60");
   const survey = useSurveyWalk();
+  const gps = useGpsLocation();
+
+  const availableAreas = useMemo(
+    () => (isDeveloper ? ALL_CAMPUS_AREAS : CAMPUS_BUILDINGS),
+    [isDeveloper],
+  );
 
   const selectedBuilding =
-    CAMPUS_BUILDINGS.find((building) => building.id === activeBuildingId) ?? CAMPUS_BUILDINGS[0];
+    availableAreas.find((building) => building.id === activeBuildingId) ?? CAMPUS_BUILDINGS[0];
   const selectedMeasurement = measurements.find(({ id }) => id === selectedPointId) ?? null;
   const activeMeasurements = useMemo(
     () =>
@@ -148,8 +159,15 @@ function WifiMapPage() {
     if (selectedMeasurement) setRssiValue(String(selectedMeasurement.rssi_dbm));
   }, [selectedMeasurement]);
 
+  useEffect(() => {
+    if (!isDeveloper && activeBuildingId === OPEN_AREA_ID) {
+      setActiveBuildingId("main");
+      setActiveFloor("Ground Floor");
+    }
+  }, [isDeveloper, activeBuildingId]);
+
   function chooseBuilding(buildingId: string) {
-    const building = CAMPUS_BUILDINGS.find((item) => item.id === buildingId);
+    const building = availableAreas.find((item) => item.id === buildingId);
     if (!building) return;
     setActiveBuildingId(buildingId);
     if (!building.floors.includes(activeFloor))
@@ -364,7 +382,7 @@ function WifiMapPage() {
 
       <main className="wifi-main">
         <section className="wifi-map-wrap" aria-label="Campus Wi-Fi heatmap">
-          <div className="wifi-map-topline">
+          <div className="wifi-map-topline flex flex-wrap items-center gap-2">
             <span className="wifi-map-label">
               <MapPinned size={15} />
               {selectedBuilding?.name} <span aria-hidden="true">/</span> {activeFloor}
@@ -372,6 +390,41 @@ function WifiMapPage() {
             {isDeveloper && (
               <span className="wifi-map-label">
                 <Signal size={14} /> Developer editing
+              </span>
+            )}
+            <button
+              type="button"
+              className={`wifi-map-label cursor-pointer transition-colors ${
+                gps.active ? "border-primary bg-primary text-primary-foreground font-semibold" : ""
+              }`}
+              onClick={gps.toggle}
+              title={
+                gps.active
+                  ? `GPS live tracking active (${
+                      gps.accuracyMeters != null
+                        ? `±${Math.round(gps.accuracyMeters)}m`
+                        : "Acquiring..."
+                    })`
+                  : "Click to track your live GPS position on campus"
+              }
+            >
+              <Navigation size={14} className={gps.active ? "animate-pulse" : ""} />
+              <span>
+                {gps.active
+                  ? gps.accuracyMeters != null
+                    ? `GPS ±${Math.round(gps.accuracyMeters)}m`
+                    : "GPS active"
+                  : "Track live GPS"}
+              </span>
+            </button>
+            {gps.active && !gps.isInsideCampus && gps.coords && (
+              <span className="wifi-map-label text-destructive text-[11px]">
+                Outside mapped campus area
+              </span>
+            )}
+            {gps.error && (
+              <span className="wifi-map-label text-destructive text-[11px]" title={gps.error}>
+                GPS: {gps.error}
               </span>
             )}
           </div>
@@ -383,6 +436,15 @@ function WifiMapPage() {
             isDeveloper={isDeveloper}
             placingPoint={placingPoint}
             selectedPointId={selectedPointId}
+            gpsLocation={
+              gps.active && gps.mapPoint
+                ? {
+                    mapPoint: gps.mapPoint,
+                    accuracyMeters: gps.accuracyMeters,
+                    isInsideCampus: gps.isInsideCampus,
+                  }
+                : null
+            }
             survey={
               survey.active
                 ? { pos: survey.pos, heading: survey.heading, track: survey.track }
@@ -486,8 +548,26 @@ function WifiMapPage() {
           )}
 
           {placingPoint && !newPoint && (
-            <div className="wifi-map-label absolute bottom-12 left-1/2 -translate-x-1/2">
-              Click the map to place a reading
+            <div className="wifi-map-label absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-2">
+              <span>Click the map to place a reading</span>
+              {gps.active && gps.mapPoint && gps.isInsideCampus && (
+                <>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    className="underline font-semibold hover:text-primary cursor-pointer flex items-center gap-1"
+                    onClick={() => {
+                      if (gps.mapPoint) {
+                        setNewPoint(gps.mapPoint);
+                        setRssiValue(survey.live !== null ? String(survey.live) : "-60");
+                        setPointError("");
+                      }
+                    }}
+                  >
+                    <Navigation size={12} /> Use GPS
+                  </button>
+                </>
+              )}
             </div>
           )}
           <div className="wifi-map-note">
@@ -503,10 +583,16 @@ function WifiMapPage() {
 
           <div className="wifi-selector-list">
             <p className="wifi-eyebrow px-1">Buildings &amp; floors</p>
-            {CAMPUS_BUILDINGS.map((building, index) => {
+            {availableAreas.map((building, index) => {
               const open = activeBuildingId === building.id;
+              const isOutdoor = building.id === OPEN_AREA_ID;
               return (
-                <section key={building.id} className={`wifi-building-row ${open ? "active" : ""}`}>
+                <section
+                  key={building.id}
+                  className={`wifi-building-row ${open ? "active" : ""} ${
+                    isOutdoor ? "border-dashed" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     className="wifi-building-select"
@@ -514,9 +600,15 @@ function WifiMapPage() {
                     onClick={() => chooseBuilding(building.id)}
                   >
                     <span>
-                      <span className="wifi-building-number">
-                        B{String(index + 1).padStart(2, "0")}
-                      </span>
+                      {isOutdoor ? (
+                        <span className="wifi-building-number font-bold text-accent-foreground bg-accent/40 px-1 py-0.5 rounded text-[9px] uppercase tracking-wider">
+                          Dev only
+                        </span>
+                      ) : (
+                        <span className="wifi-building-number">
+                          B{String(index + 1).padStart(2, "0")}
+                        </span>
+                      )}
                       <span className="ml-2 text-sm font-semibold">{building.name}</span>
                     </span>
                     {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -590,6 +682,8 @@ function WifiMapPage() {
                   floor={activeFloor}
                   busy={busy}
                   onSave={saveSurveyReading}
+                  gpsPoint={gps.active && gps.mapPoint ? gps.mapPoint : null}
+                  gpsAccuracy={gps.accuracyMeters}
                 />
               )}
               {!selectedMeasurement && !newPoint ? (
@@ -599,11 +693,44 @@ function WifiMapPage() {
                 </Button>
               ) : (
                 <form onSubmit={(event) => void saveMeasurement(event)}>
+                  {placingPoint &&
+                    !newPoint &&
+                    gps.active &&
+                    gps.mapPoint &&
+                    gps.isInsideCampus && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full mb-3 text-xs"
+                        onClick={() => {
+                          if (gps.mapPoint) {
+                            setNewPoint(gps.mapPoint);
+                            setRssiValue(survey.live !== null ? String(survey.live) : "-60");
+                            setPointError("");
+                          }
+                        }}
+                      >
+                        <Navigation size={13} /> Set to current GPS location (±
+                        {Math.round(gps.accuracyMeters ?? 0)}m)
+                      </Button>
+                    )}
                   <div className="wifi-form-row">
                     <div>
-                      <Label className="wifi-form-label" htmlFor="rssi-value">
-                        Signal (dBm)
-                      </Label>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label className="wifi-form-label mb-0" htmlFor="rssi-value">
+                          Signal (dBm)
+                        </Label>
+                        {survey.live !== null && (
+                          <button
+                            type="button"
+                            className="text-[10px] text-primary underline cursor-pointer"
+                            onClick={() => setRssiValue(String(survey.live))}
+                            title="Fill with latest live scanned Wi-Fi signal"
+                          >
+                            Live: {survey.live} dBm
+                          </button>
+                        )}
+                      </div>
                       <Input
                         id="rssi-value"
                         type="number"
